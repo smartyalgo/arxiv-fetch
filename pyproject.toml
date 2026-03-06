@@ -1,0 +1,15 @@
+[project]
+name = "arxiv-fetch"
+version = "0.1.0"
+description = "Download arxiv papers by URL or paper ID"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "requests",
+    "sentence-transformers",
+    "numpy",
+    "argcomplete",
+]
+
+[project.scripts]
+arxiv-fetch = "arxiv_fetch.main:main"

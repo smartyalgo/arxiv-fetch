@@ -6,6 +6,7 @@ import sys
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlparse
 
 import argcomplete
 import numpy as np
@@ -18,6 +19,18 @@ DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 HF_CACHE = Path("~/.cache/huggingface/hub").expanduser()
 KNOWN_CONFIG_KEYS = {"download_dir", "embedding_model"}
 PAPER_ID_RE = re.compile(r"(\d{4}\.\d{4,5}(?:v\d+)?)")
+
+
+def normalize_arxiv_url(input_str: str) -> str:
+    """Convert arxiv /html/ URLs to their /abs/ equivalent paper ID string."""
+    try:
+        parsed = urlparse(input_str)
+        if parsed.netloc in ("arxiv.org", "www.arxiv.org") and parsed.path.startswith("/html/"):
+            return parsed.path[len("/html/"):]
+    except Exception:
+        pass
+    return input_str
+
 
 _model = None
 
@@ -100,7 +113,8 @@ def title_to_filename(title: str) -> str:
 
 
 def extract_paper_id(input_str: str) -> str:
-    match = PAPER_ID_RE.search(input_str)
+    normalized = normalize_arxiv_url(input_str)
+    match = PAPER_ID_RE.search(normalized)
     if not match:
         print(f"Error: could not extract a paper ID from '{input_str}'", file=sys.stderr)
         sys.exit(1)

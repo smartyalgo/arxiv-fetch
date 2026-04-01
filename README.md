@@ -17,7 +17,7 @@ Requires Python 3.11+.
 ```bash
 git clone <repo>
 cd arxiv_fetch
-pip install -e .
+uv pip install -e .
 ```
 
 ### Tab completion (optional)
@@ -37,7 +37,13 @@ Download a paper by arxiv URL or paper ID. The PDF is saved to your configured d
 ```bash
 arxiv-fetch download 2301.07041
 arxiv-fetch download https://arxiv.org/abs/2301.07041
+arxiv-fetch download https://arxiv.org/html/2301.07041v1
 ```
+
+Accepted input formats:
+- Bare paper ID: `2301.07041` or `2301.07041v2`
+- `/abs/` URL: `https://arxiv.org/abs/2301.07041`
+- `/html/` URL: `https://arxiv.org/html/2301.07041v1` (HTML reader view)
 
 ### `search`
 

@@ -90,10 +90,15 @@ def save_config(config: dict):
     CONFIG_PATH.write_text("".join(lines))
 
 
+ARXIV_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+}
+
+
 def fetch_metadata(paper_id: str) -> tuple[str | None, str | None]:
     base_id = paper_id.split("v")[0]
     url = f"https://export.arxiv.org/api/query?id_list={base_id}"
-    resp = requests.get(url, timeout=15)
+    resp = requests.get(url, headers=ARXIV_HEADERS, timeout=15)
     resp.raise_for_status()
     root = ET.fromstring(resp.text)
     ns = {"atom": "http://www.w3.org/2005/Atom"}
@@ -184,7 +189,7 @@ def cmd_download(args):
     dest = download_dir / filename
 
     print(f"Downloading {paper_id}{f': {title}' if title else ''} ...")
-    response = requests.get(pdf_url, stream=True, timeout=60)
+    response = requests.get(pdf_url, headers=ARXIV_HEADERS, stream=True, timeout=60)
     response.raise_for_status()
 
     with open(dest, "wb") as f:

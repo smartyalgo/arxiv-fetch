@@ -38,6 +38,9 @@ _model = None
 def get_model(model_name: str):
     global _model
     if _model is None:
+        import logging
+        logging.getLogger("candle_layer_norm").setLevel(logging.ERROR)
+        logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
         from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer(model_name)
     return _model
@@ -114,6 +117,7 @@ def fetch_metadata(paper_id: str) -> tuple[str | None, str | None]:
 
 def title_to_filename(title: str) -> str:
     safe = re.sub(r'[\\/:*?"<>|]', "_", title)
+    safe = safe.replace(",", "")
     return safe.strip().replace(" ", "_")
 
 

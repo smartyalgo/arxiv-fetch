@@ -30,6 +30,17 @@ source ~/.zshrc
 
 ## Commands
 
+### Global options
+
+These apply to any command and go **before** the subcommand:
+
+- `-v`, `--verbose` — show embedding-model loading logs and progress bars (hidden by default)
+
+```bash
+arxiv-fetch -v download 2301.07041
+arxiv-fetch -v search "attention mechanisms in transformers"
+```
+
 ### `download`
 
 Download a paper by arxiv URL or paper ID. The PDF is saved to your configured download directory and indexed for search.

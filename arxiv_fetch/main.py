@@ -38,13 +38,20 @@ def normalize_arxiv_url(input_str: str) -> str:
 _model = None
 
 
-def get_model(model_name: str):
+def get_model(model_name: str, verbose: bool = False):
     global _model
     if _model is None:
         import logging
 
         logging.getLogger("candle_layer_norm").setLevel(logging.ERROR)
         logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+        if not verbose:
+            # Silence transformers' "LOAD REPORT" warning and "Loading weights"
+            # progress bar; pass --verbose to restore them.
+            from transformers.utils import logging as hf_logging
+
+            hf_logging.set_verbosity_error()
+            hf_logging.disable_progress_bar()
         from sentence_transformers import SentenceTransformer
 
         _model = SentenceTransformer(model_name)
@@ -272,7 +279,7 @@ def cmd_download(args):
 
     if abstract:
         print("Indexing paper...")
-        model = get_model(model_name)
+        model = get_model(model_name, verbose=args.verbose)
         embedding = model.encode(abstract)
         conn = init_db(DB_PATH)
         upsert_paper(conn, paper_id, title or "", abstract, str(dest), embedding)
@@ -350,7 +357,7 @@ def cmd_search(args):
         print("No papers indexed yet. Run 'arxiv-fetch download <url-or-id>' first.")
         return
 
-    model = get_model(model_name)
+    model = get_model(model_name, verbose=args.verbose)
     query_vec = model.encode(args.query).astype(np.float32)
     query_norm = query_vec / (np.linalg.norm(query_vec) + 1e-10)
 
@@ -375,6 +382,12 @@ def main():
     parser = argparse.ArgumentParser(
         prog="arxiv-fetch",
         description="Download and semantically search arxiv papers.",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show model loading logs and progress bars",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

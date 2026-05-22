@@ -3,6 +3,7 @@ import argparse
 import re
 import sqlite3
 import sys
+import time
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -25,8 +26,10 @@ def normalize_arxiv_url(input_str: str) -> str:
     """Convert arxiv /html/ URLs to their /abs/ equivalent paper ID string."""
     try:
         parsed = urlparse(input_str)
-        if parsed.netloc in ("arxiv.org", "www.arxiv.org") and parsed.path.startswith("/html/"):
-            return parsed.path[len("/html/"):]
+        if parsed.netloc in ("arxiv.org", "www.arxiv.org") and parsed.path.startswith(
+            "/html/"
+        ):
+            return parsed.path[len("/html/") :]
     except Exception:
         pass
     return input_str
@@ -39,9 +42,11 @@ def get_model(model_name: str):
     global _model
     if _model is None:
         import logging
+
         logging.getLogger("candle_layer_norm").setLevel(logging.ERROR)
         logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
         from sentence_transformers import SentenceTransformer
+
         _model = SentenceTransformer(model_name)
     return _model
 
@@ -62,7 +67,14 @@ def init_db(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def upsert_paper(conn: sqlite3.Connection, paper_id: str, title: str, abstract: str, file_path: str, embedding: np.ndarray):
+def upsert_paper(
+    conn: sqlite3.Connection,
+    paper_id: str,
+    title: str,
+    abstract: str,
+    file_path: str,
+    embedding: np.ndarray,
+):
     conn.execute(
         """
         INSERT INTO papers (paper_id, title, abstract, file_path, embedding)
@@ -98,20 +110,53 @@ ARXIV_HEADERS = {
 }
 
 
+def arxiv_get(
+    url: str, *, stream: bool = False, timeout: int = 15, max_attempts: int = 5
+) -> requests.Response:
+    backoff = 2.0
+    for attempt in range(1, max_attempts + 1):
+        resp = requests.get(url, headers=ARXIV_HEADERS, stream=stream, timeout=timeout)
+        if resp.status_code != 429:
+            resp.raise_for_status()
+            return resp
+        if attempt == max_attempts:
+            resp.raise_for_status()
+        retry_after = resp.headers.get("Retry-After", "").strip()
+        try:
+            wait = float(retry_after) if retry_after else backoff
+        except ValueError:
+            wait = backoff
+        print(
+            f"arxiv returned 429; retrying in {wait:.1f}s (attempt {attempt}/{max_attempts})",
+            file=sys.stderr,
+        )
+        resp.close()
+        time.sleep(wait)
+        backoff = min(backoff * 2, 30.0)
+    raise RuntimeError("unreachable")
+
+
 def fetch_metadata(paper_id: str) -> tuple[str | None, str | None]:
     base_id = paper_id.split("v")[0]
     url = f"https://export.arxiv.org/api/query?id_list={base_id}"
-    resp = requests.get(url, headers=ARXIV_HEADERS, timeout=15)
-    resp.raise_for_status()
+    resp = arxiv_get(url, timeout=15)
     root = ET.fromstring(resp.text)
     ns = {"atom": "http://www.w3.org/2005/Atom"}
     entry = root.find("atom:entry", ns)
     if entry is None:
         return None, None
     title_el = entry.find("atom:title", ns)
-    title = " ".join(title_el.text.split()) if title_el is not None and title_el.text else None
+    title = (
+        " ".join(title_el.text.split())
+        if title_el is not None and title_el.text
+        else None
+    )
     summary_el = entry.find("atom:summary", ns)
-    abstract = " ".join(summary_el.text.split()) if summary_el is not None and summary_el.text else None
+    abstract = (
+        " ".join(summary_el.text.split())
+        if summary_el is not None and summary_el.text
+        else None
+    )
     return title, abstract
 
 
@@ -125,7 +170,9 @@ def extract_paper_id(input_str: str) -> str:
     normalized = normalize_arxiv_url(input_str)
     match = PAPER_ID_RE.search(normalized)
     if not match:
-        print(f"Error: could not extract a paper ID from '{input_str}'", file=sys.stderr)
+        print(
+            f"Error: could not extract a paper ID from '{input_str}'", file=sys.stderr
+        )
         sys.exit(1)
     return match.group(1)
 
@@ -136,7 +183,12 @@ def cmd_models_list(args):
 
     resp = requests.get(
         "https://huggingface.co/api/models",
-        params={"library": "sentence-transformers", "sort": "downloads", "direction": -1, "limit": 30},
+        params={
+            "library": "sentence-transformers",
+            "sort": "downloads",
+            "direction": -1,
+            "limit": 30,
+        },
         timeout=15,
     )
     resp.raise_for_status()
@@ -148,14 +200,20 @@ def cmd_models_list(args):
         model_id = m["id"]
         short = model_id.split("/")[-1]
         downloads = m.get("downloads", 0)
-        dl_str = f"{downloads / 1_000_000:.1f}M" if downloads >= 1_000_000 else f"{downloads // 1000}K"
+        dl_str = (
+            f"{downloads / 1_000_000:.1f}M"
+            if downloads >= 1_000_000
+            else f"{downloads // 1000}K"
+        )
         cached = (HF_CACHE / f"models--{model_id.replace('/', '--')}").exists()
         is_active = short == active or model_id == active
         marker = "* " if is_active else "  "
         cached_str = "yes" if cached else ""
         print(f"{marker}{model_id:<45} {dl_str:>12}  {cached_str}")
 
-    print(f"\n* = active model  |  set with: arxiv-fetch config set embedding_model <short-name>")
+    print(
+        f"\n* = active model  |  set with: arxiv-fetch config set embedding_model <short-name>"
+    )
 
 
 def cmd_config(args):
@@ -163,20 +221,31 @@ def cmd_config(args):
     if args.config_command == "get":
         key = args.key
         if key not in KNOWN_CONFIG_KEYS:
-            print(f"Error: unknown config key '{key}'. Known keys: {', '.join(sorted(KNOWN_CONFIG_KEYS))}", file=sys.stderr)
+            print(
+                f"Error: unknown config key '{key}'. Known keys: {', '.join(sorted(KNOWN_CONFIG_KEYS))}",
+                file=sys.stderr,
+            )
             sys.exit(1)
-        defaults = {"download_dir": DEFAULT_DOWNLOAD_DIR, "embedding_model": DEFAULT_EMBEDDING_MODEL}
+        defaults = {
+            "download_dir": DEFAULT_DOWNLOAD_DIR,
+            "embedding_model": DEFAULT_EMBEDDING_MODEL,
+        }
         print(config.get(key, defaults[key]))
     elif args.config_command == "set":
         key, value = args.key, args.value
         if key not in KNOWN_CONFIG_KEYS:
-            print(f"Error: unknown config key '{key}'. Known keys: {', '.join(sorted(KNOWN_CONFIG_KEYS))}", file=sys.stderr)
+            print(
+                f"Error: unknown config key '{key}'. Known keys: {', '.join(sorted(KNOWN_CONFIG_KEYS))}",
+                file=sys.stderr,
+            )
             sys.exit(1)
         config[key] = value
         save_config(config)
         print(f'Updated {key} = "{value}"')
         if key == "embedding_model":
-            print("Warning: re-download papers to rebuild embeddings with the new model.")
+            print(
+                "Warning: re-download papers to rebuild embeddings with the new model."
+            )
 
 
 def cmd_download(args):
@@ -193,8 +262,7 @@ def cmd_download(args):
     dest = download_dir / filename
 
     print(f"Downloading {paper_id}{f': {title}' if title else ''} ...")
-    response = requests.get(pdf_url, headers=ARXIV_HEADERS, stream=True, timeout=60)
-    response.raise_for_status()
+    response = arxiv_get(pdf_url, stream=True, timeout=60)
 
     with open(dest, "wb") as f:
         for chunk in response.iter_content(chunk_size=8192):
@@ -229,12 +297,17 @@ def cmd_completions_install(args):
 def cmd_similar(args):
     paper_id = extract_paper_id(args.paper)
     conn = init_db(DB_PATH)
-    rows = conn.execute("SELECT paper_id, title, file_path, embedding FROM papers").fetchall()
+    rows = conn.execute(
+        "SELECT paper_id, title, file_path, embedding FROM papers"
+    ).fetchall()
     conn.close()
 
     target = next((r for r in rows if r[0] == paper_id), None)
     if target is None:
-        print(f"Error: paper '{paper_id}' not found in index. Download it first.", file=sys.stderr)
+        print(
+            f"Error: paper '{paper_id}' not found in index. Download it first.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     target_emb = np.frombuffer(target[3], dtype=np.float32).copy()
@@ -268,7 +341,9 @@ def cmd_search(args):
     model_name = config.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
 
     conn = init_db(DB_PATH)
-    rows = conn.execute("SELECT paper_id, title, file_path, embedding FROM papers").fetchall()
+    rows = conn.execute(
+        "SELECT paper_id, title, file_path, embedding FROM papers"
+    ).fetchall()
     conn.close()
 
     if not rows:
@@ -289,7 +364,7 @@ def cmd_search(args):
     scored.sort(reverse=True)
     top_n = args.top if hasattr(args, "top") else 5
 
-    print(f"Top {min(top_n, len(scored))} results for: \"{args.query}\"\n")
+    print(f'Top {min(top_n, len(scored))} results for: "{args.query}"\n')
     for rank, (score, paper_id, title, file_path) in enumerate(scored[:top_n], 1):
         print(f"{rank}. [{score:.3f}] {title or paper_id}")
         print(f"   ID: {paper_id}  |  {file_path}")
@@ -306,13 +381,21 @@ def main():
     dl_parser = subparsers.add_parser("download", help="Download a paper by URL or ID")
     dl_parser.add_argument("paper", help="arxiv URL or paper ID (e.g. 2301.07041)")
 
-    search_parser = subparsers.add_parser("search", help="Semantic search over downloaded papers")
+    search_parser = subparsers.add_parser(
+        "search", help="Semantic search over downloaded papers"
+    )
     search_parser.add_argument("query", help="Natural language search query")
-    search_parser.add_argument("--top", type=int, default=5, help="Number of results to show (default: 5)")
+    search_parser.add_argument(
+        "--top", type=int, default=5, help="Number of results to show (default: 5)"
+    )
 
-    models_parser = subparsers.add_parser("models", help="Browse available embedding models")
+    models_parser = subparsers.add_parser(
+        "models", help="Browse available embedding models"
+    )
     models_sub = models_parser.add_subparsers(dest="models_command", required=True)
-    models_sub.add_parser("list", help="List sentence-transformer models on HuggingFace")
+    models_sub.add_parser(
+        "list", help="List sentence-transformer models on HuggingFace"
+    )
 
     cfg_parser = subparsers.add_parser("config", help="Get or set configuration values")
     cfg_sub = cfg_parser.add_subparsers(dest="config_command", required=True)
@@ -322,9 +405,13 @@ def main():
     set_p.add_argument("key")
     set_p.add_argument("value")
 
-    similar_parser = subparsers.add_parser("similar", help="List papers semantically similar to a given paper")
+    similar_parser = subparsers.add_parser(
+        "similar", help="List papers semantically similar to a given paper"
+    )
     similar_parser.add_argument("paper", help="arxiv URL or paper ID")
-    similar_parser.add_argument("--top", type=int, default=5, help="Number of results to show (default: 5)")
+    similar_parser.add_argument(
+        "--top", type=int, default=5, help="Number of results to show (default: 5)"
+    )
 
     comp_parser = subparsers.add_parser("completions", help="Shell completion helpers")
     comp_sub = comp_parser.add_subparsers(dest="completions_command", required=True)

@@ -56,6 +56,13 @@ Accepted input formats:
 - `/abs/` URL: `https://arxiv.org/abs/2301.07041`
 - `/html/` URL: `https://arxiv.org/html/2301.07041v1` (HTML reader view)
 
+#### Network resilience
+
+arxiv's metadata API (`export.arxiv.org`) is frequently rate-limited. Downloads handle this so a throttled API does not block you:
+
+- **Retries with backoff** on `429 Too Many Requests` *and* on transient network failures (read timeouts, connection errors), up to 5 attempts. Without this, a slow throttled response would surface as a raw `ReadTimeoutError` traceback.
+- **Graceful degradation**: if metadata still cannot be fetched, the PDF is downloaded anyway using the paper ID as the filename. Only the title-based filename and semantic indexing are skipped (a warning is printed).
+
 ### `search`
 
 Semantic search over your downloaded papers using a natural language query.
@@ -108,6 +115,21 @@ arxiv-fetch models list
 
 ```bash
 arxiv-fetch completions install   # write zsh completion script to ~/.oh-my-zsh/custom/
+```
+
+## Development
+
+Run the test suite:
+
+```bash
+source .venv/bin/activate
+python -m pytest tests/ -q
+```
+
+Format code before committing:
+
+```bash
+ruff format .
 ```
 
 ## Config & data locations

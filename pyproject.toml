@@ -13,3 +13,8 @@ dependencies = [
 
 [project.scripts]
 arxiv-fetch = "arxiv_fetch.main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

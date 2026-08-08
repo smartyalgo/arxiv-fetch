@@ -122,7 +122,26 @@ def arxiv_get(
 ) -> requests.Response:
     backoff = 2.0
     for attempt in range(1, max_attempts + 1):
-        resp = requests.get(url, headers=ARXIV_HEADERS, stream=stream, timeout=timeout)
+        try:
+            resp = requests.get(
+                url, headers=ARXIV_HEADERS, stream=stream, timeout=timeout
+            )
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            # Throttled arxiv backends are slow to respond and often trip the
+            # read timeout instead of returning a 429; treat these the same as
+            # a 429 and retry with backoff rather than crashing.
+            if attempt == max_attempts:
+                raise RuntimeError(
+                    f"arxiv request to {url} failed after {max_attempts} attempts: {e}"
+                ) from e
+            print(
+                f"arxiv request failed ({e.__class__.__name__}); retrying in "
+                f"{backoff:.1f}s (attempt {attempt}/{max_attempts})",
+                file=sys.stderr,
+            )
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 30.0)
+            continue
         if resp.status_code != 429:
             resp.raise_for_status()
             return resp
@@ -146,8 +165,23 @@ def arxiv_get(
 def fetch_metadata(paper_id: str) -> tuple[str | None, str | None]:
     base_id = paper_id.split("v")[0]
     url = f"https://export.arxiv.org/api/query?id_list={base_id}"
-    resp = arxiv_get(url, timeout=15)
-    root = ET.fromstring(resp.text)
+    # Metadata is a nice-to-have: it sets the filename and enables indexing.
+    # The export API is frequently throttled, so a failure here must not abort
+    # the download — fall back to (None, None) and let the caller proceed.
+    try:
+        resp = arxiv_get(url, timeout=30)
+        root = ET.fromstring(resp.text)
+    except (
+        RuntimeError,
+        requests.exceptions.RequestException,
+        ET.ParseError,
+    ) as e:
+        print(
+            f"Warning: could not fetch metadata for {base_id} ({e}); "
+            "continuing without title/abstract.",
+            file=sys.stderr,
+        )
+        return None, None
     ns = {"atom": "http://www.w3.org/2005/Atom"}
     entry = root.find("atom:entry", ns)
     if entry is None:

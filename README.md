@@ -12,12 +12,19 @@ A CLI tool for downloading arxiv papers by URL or ID, and semantically searching
 
 ## Installation
 
-Requires Python 3.11+.
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone <repo>
 cd arxiv_fetch
-uv pip install -e .
+uv tool install -e .
+```
+
+This puts `arxiv-fetch` in `~/.local/bin` (on your PATH) in an isolated environment. The `-e` (editable) flag makes the command run the current source tree, so code changes apply without reinstalling — drop it if you prefer a fixed snapshot. To update or remove:
+
+```bash
+uv tool upgrade arxiv-fetch    # re-resolve dependencies
+uv tool uninstall arxiv-fetch
 ```
 
 ### Tab completion (optional)
@@ -131,17 +138,16 @@ arxiv-fetch completions install   # write zsh completion script to ~/.oh-my-zsh/
 
 ## Development
 
-Run the test suite:
+Run the test suite (`uv sync` first if the venv is fresh — it installs the package editable):
 
 ```bash
-source .venv/bin/activate
-python -m pytest tests/ -q
+uv run pytest
 ```
 
 Format code before committing:
 
 ```bash
-ruff format .
+uv run ruff format .
 ```
 
 ## Config & data locations

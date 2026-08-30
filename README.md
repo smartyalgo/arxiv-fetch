@@ -49,7 +49,19 @@ Download a paper by arxiv URL or paper ID. The PDF is saved to your configured d
 arxiv-fetch download 2301.07041
 arxiv-fetch download https://arxiv.org/abs/2301.07041
 arxiv-fetch download https://arxiv.org/html/2301.07041v1
+arxiv-fetch download --force 2301.07041   # re-download without the duplicate prompt
 ```
+
+#### Duplicate detection
+
+If the paper is already in the index (any version, e.g. `2301.07041` matches `2301.07041v2`), the tool shows the existing file and asks before it downloads again:
+
+```
+Already downloaded: 2301.07041 (/Users/you/Downloads/A_Great_Paper.pdf)
+Download again? [y/N]
+```
+
+Answer `n` (the default) to skip. Use `--force` to bypass the prompt and re-download. The check uses the SQLite index, so a paper that was downloaded but not indexed (no abstract found) is not detected.
 
 Accepted input formats:
 - Bare paper ID: `2301.07041` or `2301.07041v2`

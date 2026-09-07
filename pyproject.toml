@@ -18,3 +18,7 @@ arxiv-fetch = "arxiv_fetch.main:main"
 dev = [
     "pytest>=9.0.3",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

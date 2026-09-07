@@ -12,12 +12,19 @@ A CLI tool for downloading arxiv papers by URL or ID, and semantically searching
 
 ## Installation
 
-Requires Python 3.11+.
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone <repo>
 cd arxiv_fetch
-uv pip install -e .
+uv tool install -e .
+```
+
+This puts `arxiv-fetch` in `~/.local/bin` (on your PATH) in an isolated environment. The `-e` (editable) flag makes the command run the current source tree, so code changes apply without reinstalling — drop it if you prefer a fixed snapshot. To update or remove:
+
+```bash
+uv tool upgrade arxiv-fetch    # re-resolve dependencies
+uv tool uninstall arxiv-fetch
 ```
 
 ### Tab completion (optional)
@@ -49,7 +56,19 @@ Download a paper by arxiv URL or paper ID. The PDF is saved to your configured d
 arxiv-fetch download 2301.07041
 arxiv-fetch download https://arxiv.org/abs/2301.07041
 arxiv-fetch download https://arxiv.org/html/2301.07041v1
+arxiv-fetch download --force 2301.07041   # re-download without the duplicate prompt
 ```
+
+#### Duplicate detection
+
+If the paper is already in the index (any version, e.g. `2301.07041` matches `2301.07041v2`), the tool shows the existing file and asks before it downloads again:
+
+```
+Already downloaded: 2301.07041 (/Users/you/Downloads/A_Great_Paper.pdf)
+Download again? [y/N]
+```
+
+Answer `n` (the default) to skip. Use `--force` to bypass the prompt and re-download. The check uses the SQLite index, so a paper that was downloaded but not indexed (no abstract found) is not detected.
 
 Accepted input formats:
 - Bare paper ID: `2301.07041` or `2301.07041v2`
@@ -119,17 +138,16 @@ arxiv-fetch completions install   # write zsh completion script to ~/.oh-my-zsh/
 
 ## Development
 
-Run the test suite:
+Run the test suite (`uv sync` first if the venv is fresh — it installs the package editable):
 
 ```bash
-source .venv/bin/activate
-python -m pytest tests/ -q
+uv run pytest
 ```
 
 Format code before committing:
 
 ```bash
-ruff format .
+uv run ruff format .
 ```
 
 ## Config & data locations

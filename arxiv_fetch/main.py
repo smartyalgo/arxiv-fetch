@@ -97,6 +97,15 @@ def upsert_paper(
     conn.commit()
 
 
+def find_downloaded(conn: sqlite3.Connection, paper_id: str) -> tuple[str, str] | None:
+    """Return (paper_id, file_path) if this paper (any version) is already indexed."""
+    base_id = paper_id.split("v")[0]
+    return conn.execute(
+        "SELECT paper_id, file_path FROM papers WHERE paper_id = ? OR paper_id LIKE ?",
+        (base_id, base_id + "v%"),
+    ).fetchone()
+
+
 def load_config() -> dict:
     if CONFIG_PATH.exists():
         with open(CONFIG_PATH, "rb") as f:
@@ -296,6 +305,20 @@ def cmd_download(args):
     model_name = config.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
 
     paper_id = extract_paper_id(args.paper)
+
+    # ponytail: duplicate check is DB-only — a paper downloaded but never
+    # indexed (no abstract) is not detected. Add a filesystem check if needed.
+    if not args.force:
+        conn = init_db(DB_PATH)
+        existing = find_downloaded(conn, paper_id)
+        conn.close()
+        if existing:
+            existing_id, existing_path = existing
+            print(f"Already downloaded: {existing_id} ({existing_path})")
+            if input("Download again? [y/N] ").strip().lower() not in ("y", "yes"):
+                print("Skipped.")
+                return
+
     pdf_url = f"https://arxiv.org/pdf/{paper_id}.pdf"
 
     title, abstract = fetch_metadata(paper_id)
@@ -427,6 +450,11 @@ def main():
 
     dl_parser = subparsers.add_parser("download", help="Download a paper by URL or ID")
     dl_parser.add_argument("paper", help="arxiv URL or paper ID (e.g. 2301.07041)")
+    dl_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-download even if the paper is already indexed, without prompting",
+    )
 
     search_parser = subparsers.add_parser(
         "search", help="Semantic search over downloaded papers"
